@@ -1,13 +1,27 @@
 import os
+import time
 from flask import Flask, jsonify
 from pymongo import MongoClient, GEO2D
 
-addr = os.getenv('MONGO_PORT_27017_TCP_ADDR', 'localhost')
-port = os.getenv('MONGO_PORT_27017_TCP_PORT', '27017')
-client = MongoClient('mongodb://analysis:supertopsecret@' + addr + ':' + port + '/analysis')
-db = client.analysis
-db.clusters.ensure_index([("loc", GEO2D)])
-# TODO: http://api.mongodb.com/python/current/examples/geo.html
+def connect_to_and_setup_database():
+	addr = os.getenv('MONGODB_PORT_27017_TCP_ADDR', 'localhost')
+	port = os.getenv('MONGODB_PORT_27017_TCP_PORT', '27017')
+	passwd = os.getenv('MONGODB_PASS', 'supertopsecret')
+	client = MongoClient('mongodb://analysis:' + passwd + '@' + addr + ':' + port + '/analysis')
+	db = client.analysis
+	db.clusters.ensure_index([("loc", GEO2D)])
+	# TODO: http://api.mongodb.com/python/current/examples/geo.html
+	return client, db
+
+connected = False
+while not connected:
+	try:
+		client, db = connect_to_and_setup_database()
+		connected = True
+	except Exception as error: 
+		print('DATABASE SETUP ERROR: ' + repr(error))
+		time.sleep(2) # wait with the retry
+
 
 app = Flask(__name__)
 
