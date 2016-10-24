@@ -1,8 +1,17 @@
+sudo: required
+
 language: 
   - python
 
+services:
+  - docker
+
 # command to install dependencies
-install: "pip install -r requirements.txt"
+install: 
+  - pip install -r requirements.txt
+  - docker build -t analysis-service
 
 # command to run tests
-script: nosetests
+script: 
+  - nosetests
+  - docker ps | grep -q analysis-service
