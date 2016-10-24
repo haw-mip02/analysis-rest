@@ -9,7 +9,7 @@ services:
 # command to install dependencies
 install: 
   - pip install -r requirements.txt
-  - docker build -t analysis-service
+  - docker build  - < Dockerfile -t analysis-service
 
 # command to run tests
 script: 
