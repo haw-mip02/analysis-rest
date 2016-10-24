@@ -1,17 +1,7 @@
 sudo: required
 
-language: 
-  - python
-
 services:
   - docker
 
-# command to install dependencies
-install: 
-  - pip install -r requirements.txt
-  - docker build  - < Dockerfile -t analysis-service
-
-# command to run tests
 script: 
-  - nosetests
-  - docker ps | grep -q analysis-service
+  - docker build  -t analysis-rest .
