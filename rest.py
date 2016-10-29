@@ -1,37 +1,114 @@
 import os
+import logging
 import time
+import numpy as np
+from collections import defaultdict
+from hdbscan import HDBSCAN
+from sklearn.preprocessing import StandardScaler
+from bson.son import SON
+from datetime import datetime
 from flask import Flask, jsonify
-from pymongo import MongoClient, GEO2D
+from pymongo import MongoClient, GEO2D, ASCENDING
+
+
+# Sensible logging format
+# TODO: proper setup for debug and release mode (also see app.run(debug...))
+logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=logging.DEBUG)
+
+# Limit the amount of returned tweets
+SEARCH_QUERY_RESULT_LIMIT = 5000
+
 
 def connect_to_and_setup_database():
-	addr = os.getenv('MONGODB_PORT_27017_TCP_ADDR', 'localhost')
-	port = os.getenv('MONGODB_PORT_27017_TCP_PORT', '27017')
-	passwd = os.getenv('MONGODB_PASS', 'supertopsecret')
-	client = MongoClient('mongodb://analysis:' + passwd + '@' + addr + ':' + port + '/analysis')
-	db = client.analysis
-	db.clusters.ensure_index([("loc", GEO2D)])
-	# TODO: http://api.mongodb.com/python/current/examples/geo.html
-	return client, db
+	while True:
+		try:
+			addr = os.getenv('MONGODB_PORT_27017_TCP_ADDR', 'localhost')
+			port = os.getenv('MONGODB_PORT_27017_TCP_PORT', '27017')
+			passwd = os.getenv('MONGODB_PASS', 'supertopsecret')
+			client = MongoClient('mongodb://analysis:' + passwd + '@' + addr + ':' + port + '/analysis')
+			db = client.analysis
+			db.tweets.ensure_index([("loc", GEO2D), ("date", ASCENDING)])
+			logging.info("Connected to database: mongodb://%s:%s/analysis", addr, port)
+			return client, db
+		except Exception as error: 
+			logging.error(repr(error))
+			time.sleep(2) # wait with the retry, database is possibly starting up
 
-connected = False
-while not connected:
-	try:
-		client, db = connect_to_and_setup_database()
-		connected = True
-	except Exception as error: 
-		print('DATABASE SETUP ERROR: ' + repr(error))
-		time.sleep(2) # wait with the retry
+def calc_location_hash(lat, lng): # simple hashing funktion for the location hashmap (used by clustering)
+	return hash((round(lat,8), round(lng,8)))
+
+def preprocess_data(data): # create location hashmap and create the numpy location array
+	location_map = {}
+	locations = []
+	for tweet in data:
+		lat, lng = tweet['loc'][0], tweet['loc'][1]
+		location_map[calc_location_hash(lat, lng)] = tweet
+		locations.append([lat, lng])
+		del tweet['date'] # remove unimport information
+		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
+	return location_map, np.array(locations) 
+
+def calc_clusters(locations): # find the clusters
+	hdb = HDBSCAN(min_cluster_size=10).fit(locations)
+	labels = hdb.labels_
+	n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+	clusters = {}
+	unique_labels = set(labels)
+	for k in unique_labels:
+		if not k == -1:
+			clusters[k] = np.stack((locations[labels == k, 0], locations[labels == k, 1]), axis=-1)
+	return clusters
+
+def analyse_cluster(cluster, location_map):
+	word_conns = {} # maps connections between words
+	word_popularity = defaultdict(int) # essentially frequency of word usage
+	word_polarity = defaultdict(int) # polarity scoring of the word across all the usages
+	for loc in cluster: # for each location in cluster
+		# get the tweet
+		tweet = location_map[calc_location_hash(loc[0], loc[1])] 
+		for word in tweet['words']: # for each word increase popularity and polarity
+			word_popularity[word] += 1
+			word_polarity[word] += tweet['polarity']
+			if not word in word_conns: # create the connection dictionary for the word if it doesnt exist
+				word_conns[word] = defaultdict(int)
+			# iterate over all other words and increment the connections
+			for other in tweet['words']:
+				if other != word:
+					word_conns[word][other] += 1
+	# to get a popularity scoring between -1 and 1 divide by the popularity
+	for word, popularity in word_popularity.items():  
+		word_polarity[word] /= popularity
+	return word_conns, word_popularity, word_polarity
 
 
+client, db = connect_to_and_setup_database()
 app = Flask(__name__)
 
 @app.route('/')
 def index(): # default path to quickly curl/wget and test if running
 	return 'Analysis REST-DB-Frontend running!'
 
-@app.route('/analysis/v1.0/clusters', methods=['GET'])
-def get_all_clusters():
-	return jsonify({'Hello': 'World'})
+@app.route('/analysis/v1.0/search/<string:latitude>/<string:longitude>/<string:radius>/<string:start>/<string:end>', methods=['GET'])
+def search_radius(latitude, longitude, radius, start, end):
+	try: # flask float converter cannot handle negative floats by default, so just use strings and internal python conversion
+		latitude, longitude, radius = float(latitude), float(longitude), float(radius)
+		start = datetime.utcfromtimestamp(float(start))
+		end = datetime.utcfromtimestamp(float(end))
+		query = { 'date': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
+		#
+		result = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'from': start, 'to': end } }
+		# process the results and already preprocess them for clustering stage
+		location_map, locations = preprocess_data(db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT))
+		# 
+		result['clusters'] = []
+		clusters = calc_clusters(locations)
+		for label in clusters:
+			word_conns, word_values, word_polarity = analyse_cluster(clusters[label], location_map)
+			# TODO: filter values, polarities and connections, e.g. trim to import details
+			result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns })
+		return jsonify(result)
+	except ValueError:
+		abort(404)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) # TODO: make debug mode conditional depending on env or args
+	app.run(debug=True, host='0.0.0.0', port=5000) # TODO: make debug mode conditional depending on env or args
