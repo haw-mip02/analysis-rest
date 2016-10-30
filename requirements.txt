@@ -3,3 +3,4 @@ numpy
 scipy
 pymongo
 flask
+redis

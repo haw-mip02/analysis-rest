@@ -35,6 +35,17 @@ def connect_to_and_setup_database():
 			logging.error(repr(error))
 			time.sleep(2) # wait with the retry, database is possibly starting up
 
+def connect_to_and_setup_cache():
+	while True:
+		try:
+			addr = os.getenv('REDIS_PORT_6379_TCP_ADDR', 'localhost')
+			port = int(os.getenv('REDIS_PORT_6379_TCP_PORT', '6379'))
+			cache = redis.StrictRedis(host=addr, port=port, db=0)
+			return cache
+		except Exception as error: 
+			logging.error(repr(error))
+			time.sleep(2) # wait with the retry, redis is possibly starting up
+
 def calc_location_hash(lat, lng): # simple hashing funktion for the location hashmap (used by clustering)
 	return hash((round(lat,8), round(lng,8)))
 
@@ -83,6 +94,7 @@ def analyse_cluster(cluster, location_map):
 
 
 client, db = connect_to_and_setup_database()
+cache = connect_to_and_setup_cache()
 app = Flask(__name__)
 
 @app.route('/')
@@ -92,6 +104,12 @@ def index(): # default path to quickly curl/wget and test if running
 @app.route('/analysis/v1.0/search/<string:latitude>/<string:longitude>/<string:radius>/<string:start>/<string:end>', methods=['GET'])
 def search_radius(latitude, longitude, radius, start, end):
 	try: # flask float converter cannot handle negative floats by default, so just use strings and internal python conversion
+		# check cache first
+		query = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
+		cached = cache.get(query)
+		if cached:
+			return cached
+		# if not cached process as usual
 		latitude, longitude, radius = float(latitude), float(longitude), float(radius)
 		start = datetime.utcfromtimestamp(float(start))
 		end = datetime.utcfromtimestamp(float(end))
@@ -108,7 +126,9 @@ def search_radius(latitude, longitude, radius, start, end):
 			word_conns, word_values, word_polarity = analyse_cluster(clusters[label], location_map)
 			# TODO: filter values, polarities and connections, e.g. trim to import details
 			result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns })
-		return jsonify(result)
+		json = jsonify(result)
+		cache.set(query, json)
+		return json
 	except ValueError:
 		abort(404)
 
