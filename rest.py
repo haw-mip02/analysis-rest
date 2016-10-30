@@ -3,6 +3,7 @@ import os
 import logging
 import time
 import numpy as np
+import redis
 from collections import defaultdict
 from hdbscan import HDBSCAN
 from sklearn.preprocessing import StandardScaler
