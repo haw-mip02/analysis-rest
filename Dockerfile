@@ -4,6 +4,7 @@ MAINTAINER Niklas Voss version: 0.1
 
 ADD ./requirements.txt /tmp/requirements.txt
 RUN pip3 install -r /tmp/requirements.txt
+RUN pip3 install hdbscan # needs to be installed separately
 
 ADD ./rest.py /opt/rest.py
 CMD ["python3", "/opt/rest.py"]
