@@ -84,7 +84,14 @@ def analyse_cluster(cluster, location_map):
 	word_conns = {} # maps connections between words
 	word_popularity = defaultdict(int) # essentially frequency of word usage
 	word_polarity = defaultdict(int) # polarity scoring of the word across all the usages
+	center = [0.0, 0.0]
+	center_count = 0
+
 	for loc in cluster: # for each location in cluster
+		# add location to center count calculation
+		center[0] += loc[0] # NOTE: a possible improvement would be to use outlier scores or the probability to 
+		center[1] += loc[1] #       represent the center of the cluster more accurately
+		center_count += 1 
 		# get the tweet
 		tweet = location_map[calc_location_hash(loc[0], loc[1])] 
 		for word in tweet['words']: # for each word increase popularity and polarity
@@ -99,7 +106,10 @@ def analyse_cluster(cluster, location_map):
 	# to get a popularity scoring between -1 and 1 divide by the popularity
 	for word, popularity in word_popularity.items():  
 		word_polarity[word] /= popularity
-	return word_conns, word_popularity, word_polarity
+	# calculate the center
+	center[0] /= center_count
+	center[1] /= center_count
+	return word_conns, word_popularity, word_polarity, center
 
 
 client, db = connect_to_and_setup_database()
@@ -132,9 +142,9 @@ def search_radius(latitude, longitude, radius, start, end):
 		result['clusters'] = []
 		clusters = calc_clusters(locations)
 		for label in clusters:
-			word_conns, word_values, word_polarity = analyse_cluster(clusters[label], location_map)
+			word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
 			# TODO: filter values, polarities and connections, e.g. trim to import details
-			result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns })
+			result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
 		json = jsonify(result)
 		cache.set(query, json)
 		return json

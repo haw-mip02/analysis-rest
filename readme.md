@@ -22,13 +22,14 @@ With placeholder parameters the query looks like this:
 The Server answers with a `404` error if the request is faulty in any way.
 If a proper request was queried, the resulting data is process and JSON-Structure 
 is returned, which contains an array of found clusters with words and their connected
-words, the polarities of the words, and the word popularity. To verify the request
-and proper time conversion a `query` object is attached to the response as well:
+words, the polarities of the words, word popularity and the center of the cluster. 
+To verify the request and proper time conversion a `query` object is attached to the response as well:
 
 ```
 {
   "clusters": [
     {
+      "center": [0.102323, 1.223323]
       "connections": {
         "someword": {
           "other": 26, 
