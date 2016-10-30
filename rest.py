@@ -1,3 +1,4 @@
+import calendar
 import os
 import logging
 import time
@@ -94,9 +95,10 @@ def search_radius(latitude, longitude, radius, start, end):
 		latitude, longitude, radius = float(latitude), float(longitude), float(radius)
 		start = datetime.utcfromtimestamp(float(start))
 		end = datetime.utcfromtimestamp(float(end))
+		# TODO: check if timespan is to big to process
 		query = { 'date': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
 		#
-		result = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'from': start, 'to': end } }
+		result = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
 		# process the results and already preprocess them for clustering stage
 		location_map, locations = preprocess_data(db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT))
 		# 
