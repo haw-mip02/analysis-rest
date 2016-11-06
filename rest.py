@@ -135,19 +135,24 @@ def search_radius(latitude, longitude, radius, start, end):
 	# TODO: check if timespan is to big to process
 	query = { 'date': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
 	#
-	result = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
+	response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
 	# process the results and already preprocess them for clustering stage
-	location_map, locations = preprocess_data(db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT))
-	# 
-	result['clusters'] = []
-	clusters = calc_clusters(locations)
-	for label in clusters:
-		word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
-		# TODO: filter values, polarities and connections, e.g. trim to import details
-		result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
-	json = jsonify(result)
-	cache.set(query, json)
-	return json
+	results = db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT)
+	response['clusters'] = []
+	if len(results) > 0:
+		location_map, locations = preprocess_data(results)
+		# 
+		response['clusters'] = []
+		clusters = calc_clusters(locations)
+		for label in clusters:
+			word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
+			# TODO: filter values, polarities and connections, e.g. trim to import details
+			response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+		json = jsonify(response)
+		cache.set(query, json)
+		return json
+	else:
+		return jsonify(response)
 
 if __name__ == '__main__':
 	app.run(debug=True, host='0.0.0.0', port=5000) # TODO: make debug mode conditional depending on env or args
