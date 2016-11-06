@@ -133,7 +133,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		start = datetime.utcfromtimestamp(float(start))
 		end = datetime.utcfromtimestamp(float(end))
 		# TODO: check if timespan is to big to process
-		query = { 'date': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
+		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
 		#
 		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
 		# process the results and already preprocess them for clustering stage
@@ -155,6 +155,6 @@ def search_radius(latitude, longitude, radius, start, end):
 			return jsonify(response)
 	except ValueError:
 		abort(404)
-		
+
 if __name__ == '__main__':
 	app.run(debug=True, host='0.0.0.0', port=5000) # TODO: make debug mode conditional depending on env or args
