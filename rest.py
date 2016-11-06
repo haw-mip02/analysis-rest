@@ -37,7 +37,7 @@ def connect_to_and_setup_database():
 			passwd = os.getenv('MONGODB_PASS', 'supertopsecret')
 			client = MongoClient('mongodb://analysis:' + passwd + '@' + addr + ':' + port + '/analysis')
 			db = client.analysis
-			db.tweets.ensure_index([("loc", GEO2D), ("date", ASCENDING)])
+			db.tweets.ensure_index([("loc", GEO2D), ("created_at", ASCENDING)])
 			logging.info("Connected to database: mongodb://%s:%s/analysis", addr, port)
 			return client, db
 		except Exception as error: 
