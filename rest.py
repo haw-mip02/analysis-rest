@@ -139,7 +139,7 @@ def search_radius(latitude, longitude, radius, start, end):
 	# process the results and already preprocess them for clustering stage
 	results = db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT)
 	response['clusters'] = []
-	if len(results) > 0:
+	if results.count() > 0:
 		location_map, locations = preprocess_data(results)
 		# 
 		response['clusters'] = []
