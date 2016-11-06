@@ -122,35 +122,32 @@ def index(): # default path to quickly curl/wget and test if running
 
 @app.route('/analysis/v1.0/search/<string:latitude>/<string:longitude>/<string:radius>/<string:start>/<string:end>', methods=['GET'])
 def search_radius(latitude, longitude, radius, start, end):
-	try: # flask float converter cannot handle negative floats by default, so just use strings and internal python conversion
-		# check cache first
-		query = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
-		cached = cache.get(query)
-		if cached:
-			return cached
-		# if not cached process as usual
-		latitude, longitude, radius = float(latitude), float(longitude), float(radius)
-		start = datetime.utcfromtimestamp(float(start))
-		end = datetime.utcfromtimestamp(float(end))
-		# TODO: check if timespan is to big to process
-		query = { 'date': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
-		#
-		result = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
-		# process the results and already preprocess them for clustering stage
-		location_map, locations = preprocess_data(db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT))
-		# 
-		result['clusters'] = []
-		clusters = calc_clusters(locations)
-		for label in clusters:
-			word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
-			# TODO: filter values, polarities and connections, e.g. trim to import details
-			result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
-		json = jsonify(result)
-		cache.set(query, json)
-		return json
-	except ValueError:
-		logging.info('Wrong values for search URL were used.')
-		abort(404)
+	# flask float converter cannot handle negative floats by default, so just use strings and internal python conversion
+	# check cache first
+	query = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
+	cached = cache.get(query)
+	if cached:
+		return cached
+	# if not cached process as usual
+	latitude, longitude, radius = float(latitude), float(longitude), float(radius)
+	start = datetime.utcfromtimestamp(float(start))
+	end = datetime.utcfromtimestamp(float(end))
+	# TODO: check if timespan is to big to process
+	query = { 'date': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
+	#
+	result = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
+	# process the results and already preprocess them for clustering stage
+	location_map, locations = preprocess_data(db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT))
+	# 
+	result['clusters'] = []
+	clusters = calc_clusters(locations)
+	for label in clusters:
+		word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
+		# TODO: filter values, polarities and connections, e.g. trim to import details
+		result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+	json = jsonify(result)
+	cache.set(query, json)
+	return json
 
 if __name__ == '__main__':
 	app.run(debug=True, host='0.0.0.0', port=5000) # TODO: make debug mode conditional depending on env or args
