@@ -17,7 +17,7 @@ from hdbscan import HDBSCAN
 from sklearn.preprocessing import StandardScaler
 from bson.son import SON
 from datetime import datetime
-from flask import Flask, jsonify
+from flask import Flask, jsonify, abort
 from pymongo import MongoClient, GEO2D, ASCENDING
 
 
