@@ -149,6 +149,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		cache.set(query, json)
 		return json
 	except ValueError:
+		logging.info('Wrong values for search URL were used.')
 		abort(404)
 
 if __name__ == '__main__':
