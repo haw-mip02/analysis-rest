@@ -148,7 +148,7 @@ def search_radius(latitude, longitude, radius, start, end):
 			clusters = calc_clusters(locations)
 			for label in clusters:
 				word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
-				# TODO: filter values, polarities and connections, e.g. trim to import details
+				# TODO: filter values, polarities and connections, e.g. trim to important details
 				response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
 			json = jsonify(response)
 			cache.set(query, json)
