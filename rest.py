@@ -97,7 +97,7 @@ def analyse_cluster(cluster, location_map):
 		tweet = location_map[calc_location_hash(loc[0], loc[1])] 
 		for word in tweet['words']: # for each word increase popularity and polarity
 			word_popularity[word] += 1
-			word_polarity[word] += tweet['polarity']
+			word_polarity[word] += tweet['polarity'] + tweet['retweet_count'] + tweet['favorite_count']
 			if not word in word_conns: # create the connection dictionary for the word if it doesnt exist
 				word_conns[word] = defaultdict(int)
 			# iterate over all other words and increment the connections
