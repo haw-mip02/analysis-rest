@@ -117,7 +117,7 @@ def analyse_cluster(cluster, location_map):
 client, db = connect_to_and_setup_database()
 cache = connect_to_and_setup_cache()
 app = Flask(__name__)
-cors = CORS(app, resources={r"/api/*": {'origins': '*'}})
+cors = CORS(app, resources={r"/analysis/*": {'origins': '*'}})
 
 @app.route('/')
 def index(): # default path to quickly curl/wget and test if running
