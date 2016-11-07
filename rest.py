@@ -18,6 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from bson.son import SON
 from datetime import datetime
 from flask import Flask, jsonify, abort
+from flask_cors import CORS, cross_origin
 from pymongo import MongoClient, GEO2D, ASCENDING
 
 
@@ -116,6 +117,7 @@ def analyse_cluster(cluster, location_map):
 client, db = connect_to_and_setup_database()
 cache = connect_to_and_setup_cache()
 app = Flask(__name__)
+cors = CORS(app, resources={r"/api/*": {'origins': '*'}})
 
 @app.route('/')
 def index(): # default path to quickly curl/wget and test if running

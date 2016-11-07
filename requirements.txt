@@ -4,3 +4,4 @@ scipy
 pymongo
 flask
 redis
+flask-cors
