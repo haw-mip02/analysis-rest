@@ -141,6 +141,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		results = db.tweets.find(query).limit(SEARCH_QUERY_RESULT_LIMIT)
 		response['clusters'] = []
 		if results.count() > 0:
+			logging.info('Query: %s retrieved %d documents.', query, results.count())
 			location_map, locations = preprocess_data(results)
 			# 
 			response['clusters'] = []

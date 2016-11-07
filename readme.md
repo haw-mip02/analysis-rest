@@ -3,7 +3,7 @@
 The REST-Service currently support radius search queries, e.g. for a local setup
 
 ```
-curl -i http://127.0.0.1:5000/analysis/v1.0/search/0.0/0.0/3.0/1331856000.2/2000000000.2
+curl -i http://127.0.0.1:5000/analysis/v1.0/search/9.3726795/53.6798865/3.0/1331856000.2/1900000000.2
 ```
 
 With placeholder parameters the query looks like this:
