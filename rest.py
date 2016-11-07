@@ -136,7 +136,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		start = datetime.utcfromtimestamp(float(start))
 		end = datetime.utcfromtimestamp(float(end))
 		# TODO: check if timespan is to big to process
-		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
+		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [longitude, latitude]), ("$maxDistance", radius)]) }
 		#
 		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
 		# process the results and already preprocess them for clustering stage
