@@ -66,7 +66,7 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 		lat, lng = tweet['loc'][0], tweet['loc'][1]
 		location_map[calc_location_hash(lat, lng)] = tweet
 		locations.append([lat, lng])
-		del tweet['date'] # remove unimport information
+		del tweet['created_at'] # remove unimport information
 		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
 	return location_map, np.array(locations) 
 
