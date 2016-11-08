@@ -20,6 +20,8 @@ from datetime import datetime
 from flask import Flask, jsonify, abort
 from flask_cors import CORS, cross_origin
 from pymongo import MongoClient, GEO2D, ASCENDING
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 
 
 # Sensible logging format
@@ -28,6 +30,7 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=log
 
 # Limit the amount of returned tweets
 SEARCH_QUERY_RESULT_LIMIT = 5000
+DESIRED_CLUSTER_COUNT = 5
 
 
 def connect_to_and_setup_database():
@@ -72,8 +75,10 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 	return location_map, np.array(locations) 
 
 def calc_clusters(locations): # find the clusters
-	hdb = HDBSCAN(min_cluster_size=10).fit(locations)
-	labels = hdb.labels_
+	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
+	kmeans = KMeans(init='random', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1).fit(locations)
+	#labels = hdb.labels_
+	labels = kmeans.labels_
 	n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
 	clusters = {}
 	unique_labels = set(labels)
