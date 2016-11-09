@@ -19,7 +19,7 @@ from bson.son import SON
 from datetime import datetime
 from flask import Flask, jsonify, abort
 from flask_cors import CORS, cross_origin
-from pymongo import MongoClient, GEO2D, ASCENDING
+from pymongo import MongoClient, GEO2D, ASCENDING, DESCENDING
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 
@@ -145,7 +145,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		#
 		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
 		# process the results and already preprocess them for clustering stage
-		results = db.tweets.find(query).limit(SEARCH_QUERY_RESULT_LIMIT)
+		results = db.tweets.find(query).sort([('retweet_count', DESCENDING), ('favorite_count', DESCENDING)]).limit(SEARCH_QUERY_RESULT_LIMIT)
 		response['clusters'] = []
 		if results.count() > 0:
 			logging.info('Query: %s retrieved %d documents.', query, results.count())
