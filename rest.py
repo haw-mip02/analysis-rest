@@ -17,8 +17,11 @@ from hdbscan import HDBSCAN
 from sklearn.preprocessing import StandardScaler
 from bson.son import SON
 from datetime import datetime
-from flask import Flask, jsonify
-from pymongo import MongoClient, GEO2D, ASCENDING
+from flask import Flask, jsonify, abort
+from flask_cors import CORS, cross_origin
+from pymongo import MongoClient, GEO2D, ASCENDING, DESCENDING
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 
 
 # Sensible logging format
@@ -27,6 +30,7 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=log
 
 # Limit the amount of returned tweets
 SEARCH_QUERY_RESULT_LIMIT = 5000
+DESIRED_CLUSTER_COUNT = 5
 
 
 def connect_to_and_setup_database():
@@ -37,7 +41,8 @@ def connect_to_and_setup_database():
 			passwd = os.getenv('MONGODB_PASS', 'supertopsecret')
 			client = MongoClient('mongodb://analysis:' + passwd + '@' + addr + ':' + port + '/analysis')
 			db = client.analysis
-			db.tweets.ensure_index([("loc", GEO2D), ("date", ASCENDING)])
+			db.tweets.ensure_index([("loc", GEO2D)])
+			db.tweets.ensure_index([("created_at", ASCENDING)])
 			logging.info("Connected to database: mongodb://%s:%s/analysis", addr, port)
 			return client, db
 		except Exception as error: 
@@ -65,13 +70,15 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 		lat, lng = tweet['loc'][0], tweet['loc'][1]
 		location_map[calc_location_hash(lat, lng)] = tweet
 		locations.append([lat, lng])
-		del tweet['date'] # remove unimport information
+		del tweet['created_at'] # remove unimport information
 		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
 	return location_map, np.array(locations) 
 
 def calc_clusters(locations): # find the clusters
-	hdb = HDBSCAN(min_cluster_size=10).fit(locations)
-	labels = hdb.labels_
+	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
+	kmeans = KMeans(init='random', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1).fit(locations)
+	#labels = hdb.labels_
+	labels = kmeans.labels_
 	n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
 	clusters = {}
 	unique_labels = set(labels)
@@ -96,7 +103,7 @@ def analyse_cluster(cluster, location_map):
 		tweet = location_map[calc_location_hash(loc[0], loc[1])] 
 		for word in tweet['words']: # for each word increase popularity and polarity
 			word_popularity[word] += 1
-			word_polarity[word] += tweet['polarity']
+			word_polarity[word] += tweet['polarity'] + tweet['retweet_count'] + tweet['favorite_count']
 			if not word in word_conns: # create the connection dictionary for the word if it doesnt exist
 				word_conns[word] = defaultdict(int)
 			# iterate over all other words and increment the connections
@@ -115,6 +122,7 @@ def analyse_cluster(cluster, location_map):
 client, db = connect_to_and_setup_database()
 cache = connect_to_and_setup_cache()
 app = Flask(__name__)
+cors = CORS(app, resources={r"/analysis/*": {'origins': '*'}})
 
 @app.route('/')
 def index(): # default path to quickly curl/wget and test if running
@@ -133,21 +141,27 @@ def search_radius(latitude, longitude, radius, start, end):
 		start = datetime.utcfromtimestamp(float(start))
 		end = datetime.utcfromtimestamp(float(end))
 		# TODO: check if timespan is to big to process
-		query = { 'date': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [latitude, longitude]), ("$maxDistance", radius)]) }
+		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [longitude, latitude]), ("$maxDistance", radius)]) }
 		#
-		result = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
+		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
 		# process the results and already preprocess them for clustering stage
-		location_map, locations = preprocess_data(db.tweets.find(query, { '_id': False }).limit(SEARCH_QUERY_RESULT_LIMIT))
-		# 
-		result['clusters'] = []
-		clusters = calc_clusters(locations)
-		for label in clusters:
-			word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
-			# TODO: filter values, polarities and connections, e.g. trim to import details
-			result['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
-		json = jsonify(result)
-		cache.set(query, json)
-		return json
+		results = db.tweets.find(query).sort([('retweet_count', DESCENDING), ('favorite_count', DESCENDING)]).limit(SEARCH_QUERY_RESULT_LIMIT)
+		response['clusters'] = []
+		if results.count() > 0:
+			logging.info('Query: %s retrieved %d documents.', query, results.count())
+			location_map, locations = preprocess_data(results)
+			# 
+			response['clusters'] = []
+			clusters = calc_clusters(locations)
+			for label in clusters:
+				word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
+				# TODO: filter values, polarities and connections, e.g. trim to important details
+				response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+			json = jsonify(response)
+			cache.set(query, json)
+			return json
+		else:
+			return jsonify(response)
 	except ValueError:
 		abort(404)
 
