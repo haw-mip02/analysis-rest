@@ -76,7 +76,7 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 
 def calc_clusters(locations): # find the clusters
 	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
-	kmeans = KMeans(init='random', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1, tol=1e-2).fit(locations)
+	kmeans = KMeans(init='random', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1).fit(locations)
 	#labels = hdb.labels_
 	labels = kmeans.labels_
 	n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
