@@ -74,6 +74,15 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
 	return location_map, np.array(locations)
 
+def create_cluster(response, cluster, location_map):
+	location_map, locations = preprocess_data(results)
+
+	clusters = calc_clusters(locations)
+	for label in clusters:
+		word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
+		# TODO: filter values, polarities and connections, e.g. trim to important details
+		response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+
 def calc_clusters(locations): # find the clusters
 	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
 	kmeans = KMeans(init='random', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1).fit(locations)
@@ -136,6 +145,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		cached = cache.get(query)
 		if cached:
 			return cached
+
 		# if not cached process as usual
 		latitude, longitude, radius = float(latitude), float(longitude), float(radius)
 		start = datetime.utcfromtimestamp(float(start))
@@ -146,16 +156,13 @@ def search_radius(latitude, longitude, radius, start, end):
 		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
 		# process the results and already preprocess them for clustering stage
 		results = db.tweets.find(query).sort([('retweet_count', DESCENDING), ('favorite_count', DESCENDING)]).limit(SEARCH_QUERY_RESULT_LIMIT)
+
 		response['clusters'] = []
 		if results.count() > 0:
 			logging.info('Query: %s retrieved %d documents.', query, results.count())
-			location_map, locations = preprocess_data(results)
 
-			clusters = calc_clusters(locations)
-			for label in clusters:
-				word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
-				# TODO: filter values, polarities and connections, e.g. trim to important details
-				response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+			response = create_cluster(response, cluster, location_map)
+
 			json = jsonify(response)
 			cache.set(query, json)
 			return json
