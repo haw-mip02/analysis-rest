@@ -12,6 +12,9 @@ import logging
 import time
 import numpy as np
 import redis
+import threading
+import json as j
+from enum import Enum
 from collections import defaultdict
 from hdbscan import HDBSCAN
 from sklearn.preprocessing import StandardScaler
@@ -32,6 +35,10 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=log
 SEARCH_QUERY_RESULT_LIMIT = 5000
 DESIRED_CLUSTER_COUNT = 5
 
+# different progress-statusses
+NEW = 'NEW'
+IN_PROGRESS = 'IN_PROGRESS'
+DONE = 'DONE'
 
 def connect_to_and_setup_database():
 	while True:
@@ -45,7 +52,7 @@ def connect_to_and_setup_database():
 			db.tweets.ensure_index([("created_at", ASCENDING)])
 			logging.info("Connected to database: mongodb://%s:%s/analysis", addr, port)
 			return client, db
-		except Exception as error: 
+		except Exception as error:
 			logging.error(repr(error))
 			time.sleep(2) # wait with the retry, database is possibly starting up
 
@@ -56,9 +63,13 @@ def connect_to_and_setup_cache():
 			port = int(os.getenv('REDIS_PORT_6379_TCP_PORT', '6379'))
 			cache = redis.StrictRedis(host=addr, port=port, db=0)
 			return cache
-		except Exception as error: 
+		except Exception as error:
 			logging.error(repr(error))
 			time.sleep(2) # wait with the retry, redis is possibly starting up
+
+def save_response_in_cache(query_key, response):
+	json = j.dumps(response)
+	cache.set(query_key, json)
 
 def calc_location_hash(lat, lng): # simple hashing funktion for the location hashmap (used by clustering)
 	return hash((round(lat,8), round(lng,8)))
@@ -72,7 +83,22 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 		locations.append([lat, lng])
 		del tweet['created_at'] # remove unimport information
 		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
-	return location_map, np.array(locations) 
+	return location_map, np.array(locations)
+
+def create_cluster(cache_query_key, response, results):
+	logging.debug('Starting thread for creating cluster with query: %s', cache_query_key)
+	response['status'] = IN_PROGRESS
+	save_response_in_cache(cache_query_key, response)
+	location_map, locations = preprocess_data(results)
+
+	clusters = calc_clusters(locations)
+	for label in clusters:
+		word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
+		# TODO: filter values, polarities and connections, e.g. trim to important details
+		response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+	response['status'] = DONE
+	save_response_in_cache(cache_query_key, response)
+	logging.debug('Completed thread for creating cluster with query: %s', cache_query_key)
 
 def calc_clusters(locations): # find the clusters
 	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
@@ -96,11 +122,11 @@ def analyse_cluster(cluster, location_map):
 
 	for loc in cluster: # for each location in cluster
 		# add location to center count calculation
-		center[0] += loc[0] # NOTE: a possible improvement would be to use outlier scores or the probability to 
+		center[0] += loc[0] # NOTE: a possible improvement would be to use outlier scores or the probability to
 		center[1] += loc[1] #       represent the center of the cluster more accurately
-		center_count += 1 
+		center_count += 1
 		# get the tweet
-		tweet = location_map[calc_location_hash(loc[0], loc[1])] 
+		tweet = location_map[calc_location_hash(loc[0], loc[1])]
 		for word in tweet['words']: # for each word increase popularity and polarity
 			word_popularity[word] += 1
 			word_polarity[word] += tweet['polarity'] + tweet['retweet_count'] + tweet['favorite_count']
@@ -111,7 +137,7 @@ def analyse_cluster(cluster, location_map):
 				if other != word:
 					word_conns[word][other] += 1
 	# to get a popularity scoring between -1 and 1 divide by the popularity
-	for word, popularity in word_popularity.items():  
+	for word, popularity in word_popularity.items():
 		word_polarity[word] /= popularity
 	# calculate the center
 	center[0] /= center_count
@@ -132,10 +158,11 @@ def index(): # default path to quickly curl/wget and test if running
 def search_radius(latitude, longitude, radius, start, end):
 	try: # flask float converter cannot handle negative floats by default, so just use strings and internal python conversion
 		# check cache first
-		query = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
-		cached = cache.get(query)
+		cache_query_key = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
+		cached = cache.get(cache_query_key)
 		if cached:
 			return cached
+
 		# if not cached process as usual
 		latitude, longitude, radius = float(latitude), float(longitude), float(radius)
 		start = datetime.utcfromtimestamp(float(start))
@@ -144,24 +171,20 @@ def search_radius(latitude, longitude, radius, start, end):
 		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [longitude, latitude]), ("$maxDistance", radius)]) }
 		#
 		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
+		response['status'] = NEW
 		# process the results and already preprocess them for clustering stage
 		results = db.tweets.find(query).sort([('retweet_count', DESCENDING), ('favorite_count', DESCENDING)]).limit(SEARCH_QUERY_RESULT_LIMIT)
+
 		response['clusters'] = []
+		logging.info('Query: %s retrieved %d documents.', query, results.count())
 		if results.count() > 0:
-			logging.info('Query: %s retrieved %d documents.', query, results.count())
-			location_map, locations = preprocess_data(results)
-			# 
-			response['clusters'] = []
-			clusters = calc_clusters(locations)
-			for label in clusters:
-				word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
-				# TODO: filter values, polarities and connections, e.g. trim to important details
-				response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
-			json = jsonify(response)
-			cache.set(query, json)
-			return json
+
+			t = threading.Thread(target=create_cluster, args=(cache_query_key, response, results))
+			t.start()
 		else:
-			return jsonify(response)
+			response['status'] = DONE
+
+		return jsonify(response)
 	except ValueError:
 		abort(404)
 
