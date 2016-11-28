@@ -12,6 +12,9 @@ import logging
 import time
 import numpy as np
 import redis
+import threading
+import json as j
+from enum import Enum
 from collections import defaultdict
 from hdbscan import HDBSCAN
 from sklearn.preprocessing import StandardScaler
@@ -32,10 +35,10 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=log
 SEARCH_QUERY_RESULT_LIMIT = 5000
 DESIRED_CLUSTER_COUNT = 5
 
-class ProgressStatus(Enum):
-    NEW = 'NEW'
-    IN_PROGRESS = 'IN_PROGRESS'
-	DONE = 'DONE'
+# different progress-statusses
+NEW = 'NEW'
+IN_PROGRESS = 'IN_PROGRESS'
+DONE = 'DONE'
 
 def connect_to_and_setup_database():
 	while True:
@@ -65,8 +68,8 @@ def connect_to_and_setup_cache():
 			time.sleep(2) # wait with the retry, redis is possibly starting up
 
 def save_response_in_cache(query_key, response):
-	json = jsonify(response)
-	cache.set(query, json)
+	json = j.dumps(response)
+	cache.set(query_key, json)
 
 def calc_location_hash(lat, lng): # simple hashing funktion for the location hashmap (used by clustering)
 	return hash((round(lat,8), round(lng,8)))
@@ -82,8 +85,9 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
 	return location_map, np.array(locations)
 
-def create_cluster(cache_query_key, response, cluster, location_map):
-	response['status'] = ProgressStatus.IN_PROGRESS
+def create_cluster(cache_query_key, response, results):
+	logging.debug('Starting thread for creating cluster with query: %s', cache_query_key)
+	response['status'] = IN_PROGRESS
 	save_response_in_cache(cache_query_key, response)
 	location_map, locations = preprocess_data(results)
 
@@ -92,8 +96,9 @@ def create_cluster(cache_query_key, response, cluster, location_map):
 		word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
 		# TODO: filter values, polarities and connections, e.g. trim to important details
 		response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
-	response['status'] = ProgressStatus.DONE
+	response['status'] = DONE
 	save_response_in_cache(cache_query_key, response)
+	logging.debug('Completed thread for creating cluster with query: %s', cache_query_key)
 
 def calc_clusters(locations): # find the clusters
 	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
@@ -166,20 +171,20 @@ def search_radius(latitude, longitude, radius, start, end):
 		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [longitude, latitude]), ("$maxDistance", radius)]) }
 		#
 		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
-		response['status'] = ProgressStatus.NEW
+		response['status'] = NEW
 		# process the results and already preprocess them for clustering stage
 		results = db.tweets.find(query).sort([('retweet_count', DESCENDING), ('favorite_count', DESCENDING)]).limit(SEARCH_QUERY_RESULT_LIMIT)
 
 		response['clusters'] = []
+		logging.info('Query: %s retrieved %d documents.', query, results.count())
 		if results.count() > 0:
-			logging.info('Query: %s retrieved %d documents.', query, results.count())
 
-			response = create_cluster(cache_query_key, response, cluster, location_map)
-
-			return jsonify(response)
+			t = threading.Thread(target=create_cluster, args=(cache_query_key, response, results))
+			t.start()
 		else:
-			response['status'] = ProgressStatus.DONE
-			return jsonify(response)
+			response['status'] = DONE
+
+		return jsonify(response)
 	except ValueError:
 		abort(404)
 

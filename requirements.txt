@@ -5,3 +5,4 @@ pymongo
 flask
 redis
 flask-cors
+hdbscan
