@@ -32,6 +32,10 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=log
 SEARCH_QUERY_RESULT_LIMIT = 5000
 DESIRED_CLUSTER_COUNT = 5
 
+class ProgressStatus(Enum):
+    NEW = 'NEW'
+    IN_PROGRESS = 'IN_PROGRESS'
+	DONE = 'DONE'
 
 def connect_to_and_setup_database():
 	while True:
@@ -60,6 +64,10 @@ def connect_to_and_setup_cache():
 			logging.error(repr(error))
 			time.sleep(2) # wait with the retry, redis is possibly starting up
 
+def save_response_in_cache(query_key, response):
+	json = jsonify(response)
+	cache.set(query, json)
+
 def calc_location_hash(lat, lng): # simple hashing funktion for the location hashmap (used by clustering)
 	return hash((round(lat,8), round(lng,8)))
 
@@ -74,7 +82,9 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
 	return location_map, np.array(locations)
 
-def create_cluster(response, cluster, location_map):
+def create_cluster(cache_query_key, response, cluster, location_map):
+	response['status'] = ProgressStatus.IN_PROGRESS
+	save_response_in_cache(cache_query_key, response)
 	location_map, locations = preprocess_data(results)
 
 	clusters = calc_clusters(locations)
@@ -82,6 +92,8 @@ def create_cluster(response, cluster, location_map):
 		word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
 		# TODO: filter values, polarities and connections, e.g. trim to important details
 		response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+	response['status'] = ProgressStatus.DONE
+	save_response_in_cache(cache_query_key, response)
 
 def calc_clusters(locations): # find the clusters
 	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
@@ -141,8 +153,8 @@ def index(): # default path to quickly curl/wget and test if running
 def search_radius(latitude, longitude, radius, start, end):
 	try: # flask float converter cannot handle negative floats by default, so just use strings and internal python conversion
 		# check cache first
-		query = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
-		cached = cache.get(query)
+		cache_query_key = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
+		cached = cache.get(cache_query_key)
 		if cached:
 			return cached
 
@@ -154,6 +166,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [longitude, latitude]), ("$maxDistance", radius)]) }
 		#
 		response = { 'query': {'lat': latitude, 'lng': longitude, 'radius': radius, 'start': calendar.timegm(start.utctimetuple()), 'end': calendar.timegm(end.utctimetuple()) } }
+		response['status'] = ProgressStatus.NEW
 		# process the results and already preprocess them for clustering stage
 		results = db.tweets.find(query).sort([('retweet_count', DESCENDING), ('favorite_count', DESCENDING)]).limit(SEARCH_QUERY_RESULT_LIMIT)
 
@@ -161,12 +174,11 @@ def search_radius(latitude, longitude, radius, start, end):
 		if results.count() > 0:
 			logging.info('Query: %s retrieved %d documents.', query, results.count())
 
-			response = create_cluster(response, cluster, location_map)
+			response = create_cluster(cache_query_key, response, cluster, location_map)
 
-			json = jsonify(response)
-			cache.set(query, json)
-			return json
+			return jsonify(response)
 		else:
+			response['status'] = ProgressStatus.DONE
 			return jsonify(response)
 	except ValueError:
 		abort(404)
