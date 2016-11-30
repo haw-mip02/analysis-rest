@@ -48,6 +48,11 @@ To verify the request and proper time conversion a `query` object is attached to
         "words": -0.9066666666666666,
         ...
       },
+      "tweets": {
+        "581f1a5844e59d001102b83d": 21.5,
+        "581f1a5844e59d001102b15f": 40,
+        ...
+      }
       "words": {
         "someword": 31,
         "other": 139,
