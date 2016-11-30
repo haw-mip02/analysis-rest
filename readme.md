@@ -1,4 +1,7 @@
-[![Build Status](https://travis-ci.org/haw-mip02/analysis-rest.svg?branch=master)](https://travis-ci.org/haw-mip02/analysis-rest)
+# Build
+
+`master`: [![Build Status](https://travis-ci.org/haw-mip02/analysis-rest.svg?branch=master)](https://travis-ci.org/haw-mip02/analysis-rest)
+`dev`: [![Build Status](https://travis-ci.org/haw-mip02/analysis-rest.svg?branch=dev)](https://travis-ci.org/haw-mip02/analysis-rest)
 
 # API
 
