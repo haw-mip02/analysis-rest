@@ -14,6 +14,7 @@ import numpy as np
 import redis
 import threading
 import json as j
+import operator
 from enum import Enum
 from collections import defaultdict
 from hdbscan import HDBSCAN
@@ -93,9 +94,9 @@ def create_cluster(cache_query_key, response, results):
 
 	clusters = calc_clusters(locations)
 	for label in clusters:
-		word_conns, word_values, word_polarity, center = analyse_cluster(clusters[label], location_map)
+		word_conns, word_values, word_polarity, center, tweets = analyse_cluster(clusters[label], location_map)
 		# TODO: filter values, polarities and connections, e.g. trim to important details
-		response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center })
+		response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center, 'tweets': tweets })
 	response['status'] = DONE
 	save_response_in_cache(cache_query_key, response)
 	logging.debug('Completed thread for creating cluster with query: %s', cache_query_key)
@@ -117,6 +118,7 @@ def analyse_cluster(cluster, location_map):
 	word_conns = {} # maps connections between words
 	word_popularity = defaultdict(int) # essentially frequency of word usage
 	word_polarity = defaultdict(int) # polarity scoring of the word across all the usages
+	tweets = defaultdict(int)
 	center = [0.0, 0.0]
 	center_count = 0
 
@@ -127,6 +129,7 @@ def analyse_cluster(cluster, location_map):
 		center_count += 1
 		# get the tweet
 		tweet = location_map[calc_location_hash(loc[0], loc[1])]
+		tweets[tweet['_id']] += tweet['polarity'] + tweet['retweet_count'] + tweet['favorite_count']
 		for word in tweet['words']: # for each word increase popularity and polarity
 			word_popularity[word] += 1
 			word_polarity[word] += tweet['polarity'] + tweet['retweet_count'] + tweet['favorite_count']
@@ -142,7 +145,8 @@ def analyse_cluster(cluster, location_map):
 	# calculate the center
 	center[0] /= center_count
 	center[1] /= center_count
-	return word_conns, word_popularity, word_polarity, center
+	popular_tweet_ids = dict(sorted(tweets.items(), key=operator.itemgetter(1), reverse=True)[:5])
+	return word_conns, word_popularity, word_polarity, center, popular_tweet_ids
 
 
 client, db = connect_to_and_setup_database()
