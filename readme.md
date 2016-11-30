@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/haw-mip02/analysis-rest.svg?branch=master)](https://travis-ci.org/haw-mip02/analysis-rest)
+
 # API
 
 The REST-Service currently support radius search queries, e.g. for a local setup
