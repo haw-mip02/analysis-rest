@@ -67,6 +67,7 @@ To verify the request and proper time conversion a `query` object is attached to
     },
     ...
   ],
+  "status": "DONE",
   "query": {
     "end": 2000000000,
     "lat": 0.0,
