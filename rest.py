@@ -96,7 +96,7 @@ def create_cluster(cache_query_key, response, results):
 
 	clusters, centers  = calc_clusters(locations)
 	for label in clusters:
-		center = centers[label]
+		center = [centers[label][0], centers[label][1]]
 		word_conns, word_values, word_polarity, tweets = analyse_cluster(clusters[label], location_map)
 		# TODO: filter values, polarities and connections, e.g. trim to important details
 		response['clusters'].append({ 'words': word_values, 'polarities': word_polarity, 'connections': word_conns, 'center': center, 'tweets': tweets })
