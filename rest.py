@@ -105,9 +105,7 @@ def create_cluster(cache_query_key, response, results):
 	logging.debug('Completed thread for creating cluster with query: %s', cache_query_key)
 
 def calc_clusters(locations): # find the clusters
-	#hdb = HDBSCAN(min_cluster_size=10).fit(locations)
 	kmeans = KMeans(init='random', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1).fit(locations)
-	#labels = hdb.labels_
 	labels = kmeans.labels_
 	centers = kmeans.cluster_centers_
 	n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
@@ -115,21 +113,6 @@ def calc_clusters(locations): # find the clusters
 	unique_labels = set(labels)
 	for k in unique_labels:
 		clusters[k] = np.stack((locations[labels == k, 0], locations[labels == k, 1]), axis=-1)
-	# get unassigned points and remove them from cluster map
-	unused = clusters[-1]
-	del clusters[-1] # unassigned points should not be part of cluster dict
-	unique_labels.discard(-1) # only iterate over real clusters
-	for p in unused:
-		dist = LARGEST_DISTANCE
-		best = -1
-		for k in unique_labels:
-			c = centers[k] # calculate distance
-			nd = np.linalg.norm(p-c)
-			if nd < dist: # if best fit
-				dist = nd
-				best = k
-		# finally add to best fitting cluster
-		clusters[k] = np.vstack(clusters[k], p)
 	return clusters, centers
 
 def analyse_cluster(cluster, location_map):
