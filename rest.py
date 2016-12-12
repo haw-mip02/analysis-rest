@@ -105,7 +105,7 @@ def create_cluster(cache_query_key, response, results):
 	logging.debug('Completed thread for creating cluster with query: %s', cache_query_key)
 
 def calc_clusters(locations): # find the clusters
-	kmeans = KMeans(init='k-means++', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1, n_jobs=-1).fit(locations)
+	kmeans = KMeans(init='k-means++', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1, n_jobs=-2, precompute_distances=True).fit(locations)
 	labels = kmeans.labels_
 	centers = kmeans.cluster_centers_
 	n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
