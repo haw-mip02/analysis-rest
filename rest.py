@@ -34,7 +34,6 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', level=log
 
 # Limit the amount of returned tweets
 SEARCH_QUERY_RESULT_LIMIT = 5000
-DESIRED_CLUSTER_COUNT = 5
 
 LARGEST_DISTANCE = float('inf')
 
@@ -88,13 +87,13 @@ def preprocess_data(data): # create location hashmap and create the numpy locati
 		# NOTE: date is in UTC to get timestamp do something like this: calendar.timegm(dt.utctimetuple())
 	return location_map, np.array(locations)
 
-def create_cluster(cache_query_key, response, results):
+def create_cluster(cache_query_key, response, results, cluster_count):
 	logging.debug('Starting thread for creating cluster with query: %s', cache_query_key)
 	response['status'] = IN_PROGRESS
 	save_response_in_cache(cache_query_key, response)
 	location_map, locations = preprocess_data(results)
 
-	clusters, centers  = calc_clusters(locations)
+	clusters, centers  = calc_clusters(locations, cluster_count)
 	for label in clusters:
 		center = [centers[label][0], centers[label][1]]
 		word_conns, word_values, word_polarity, tweets = analyse_cluster(clusters[label], location_map)
@@ -104,8 +103,8 @@ def create_cluster(cache_query_key, response, results):
 	save_response_in_cache(cache_query_key, response)
 	logging.debug('Completed thread for creating cluster with query: %s', cache_query_key)
 
-def calc_clusters(locations): # find the clusters
-	kmeans = KMeans(init='k-means++', n_clusters=DESIRED_CLUSTER_COUNT, n_init=1, n_jobs=-2, precompute_distances=True).fit(locations)
+def calc_clusters(locations, cluster_count): # find the clusters
+	kmeans = KMeans(init='k-means++', n_clusters=cluster_count, n_init=1, n_jobs=-2, precompute_distances=True).fit(locations)
 	labels = kmeans.labels_
 	centers = kmeans.cluster_centers_
 	n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
@@ -150,11 +149,11 @@ cors = CORS(app, resources={r"/analysis/*": {'origins': '*'}})
 def index(): # default path to quickly curl/wget and test if running
 	return 'Analysis REST-DB-Frontend running!'
 
-@app.route('/analysis/v1.0/search/<string:latitude>/<string:longitude>/<string:radius>/<string:start>/<string:end>', methods=['GET'])
-def search_radius(latitude, longitude, radius, start, end):
+@app.route('/analysis/v1.0/search/<string:latitude>/<string:longitude>/<string:radius>/<string:start>/<string:end>/<string:clusters>', methods=['GET'])
+def search_radius(latitude, longitude, radius, start, end, clusters):
 	try: # flask float converter cannot handle negative floats by default, so just use strings and internal python conversion
 		# check cache first
-		cache_query_key = '%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end)
+		cache_query_key = '%s/%s/%s/%s/%s/%s' % (latitude, longitude, radius, start, end, clusters)
 		cached = cache.get(cache_query_key)
 		if cached:
 			return cached
@@ -163,6 +162,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		latitude, longitude, radius = float(latitude), float(longitude), float(radius)
 		start = datetime.utcfromtimestamp(float(start))
 		end = datetime.utcfromtimestamp(float(end))
+		cluster_count = int(clusters)
 		# TODO: check if timespan is to big to process
 		query = { 'created_at': { '$gte': start, '$lt': end }, 'loc': SON([("$near", [longitude, latitude]), ("$maxDistance", radius)]) }
 		#
@@ -175,7 +175,7 @@ def search_radius(latitude, longitude, radius, start, end):
 		logging.info('Query: %s retrieved %d documents.', query, results.count())
 		if results.count() > 0:
 
-			t = threading.Thread(target=create_cluster, args=(cache_query_key, response, results))
+			t = threading.Thread(target=create_cluster, args=(cache_query_key, response, results, cluster_count))
 			t.start()
 		else:
 			response['status'] = DONE
