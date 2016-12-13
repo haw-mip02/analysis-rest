@@ -9,12 +9,13 @@ curl -i http://127.0.0.1:5000/analysis/v1.0/search/9.3726795/53.6798865/3.0/1331
 With placeholder parameters the query looks like this:
 
 ```
-/analysis/v1.0/search/<latitude>/<longitude>/<radius>/<tstart>/<tend>
+/analysis/v1.0/search/<latitude>/<longitude>/<radius>/<tstart>/<tend>/<clusters>
 ```
 
 * `latitude` and `longitude` are two floats describing the center position of the search query
 * `radius` is simply the search radius
 * `tstart` and `tend` are the start and end points of the timespan to be analyzed (expects UTC timestamps)
+* `clusters` defines the desired (maximum) amount of clusters. The response will contain `0 <= n <= clusters` clusters. Expects an integer.
 * all parameters are non-optional
 
 # Response
@@ -81,7 +82,7 @@ JS-timstamps are already in UTC, so no special conversion for timezones should b
 ```
 function getClusterData(lat, lng, radius, tstart, tend, callback)
 {
-	var url = "/analysis/v1.0/search/" + lat + "/" + lng + "/" + radius + "/" + Math.round(+tstart/1000) + "/" + Math.round(+tend/1000);
+	var url = "/analysis/v1.0/search/" + lat + "/" + lng + "/" + radius + "/" + Math.round(+tstart/1000) + "/" + Math.round(+tend/1000) + "/10";
     var xmlHttp = new XMLHttpRequest();
     xmlHttp.onreadystatechange = function() {
         if (xmlHttp.readyState == 4 && xmlHttp.status == 200)
